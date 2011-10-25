@@ -18,9 +18,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 
 import org.eclipse.cdt.core.CCorePlugin;
+import org.eclipse.cdt.core.IBinaryParser.IBinaryObject;
 import org.eclipse.cdt.core.IProcessInfo;
 import org.eclipse.cdt.core.IProcessList;
-import org.eclipse.cdt.core.IBinaryParser.IBinaryObject;
 import org.eclipse.cdt.core.model.ICProject;
 import org.eclipse.cdt.debug.core.CDIDebugModel;
 import org.eclipse.cdt.debug.core.CDebugUtils;
@@ -32,6 +32,8 @@ import org.eclipse.cdt.debug.core.cdi.CDIException;
 import org.eclipse.cdt.debug.core.cdi.ICDISession;
 import org.eclipse.cdt.debug.core.cdi.model.ICDIRuntimeOptions;
 import org.eclipse.cdt.debug.core.cdi.model.ICDITarget;
+import org.eclipse.cdt.internal.core.remoteproxy.IRemoteCommandLauncher;
+import org.eclipse.cdt.internal.core.remoteproxy.RemoteProxyManager;
 import org.eclipse.cdt.launch.AbstractCLaunchDelegate;
 import org.eclipse.cdt.launch.internal.ui.LaunchMessages;
 import org.eclipse.cdt.launch.internal.ui.LaunchUIPlugin;
@@ -81,21 +83,33 @@ public class LocalCDILaunchDelegate extends AbstractCLaunchDelegate {
 		}
 		monitor.worked(1);
 		try {
-			IPath exePath = CDebugUtils.verifyProgramPath(config);
-			File wd = getWorkingDirectory(config);
+			String exePath = CDebugUtils.verifyProgramURI(config);
+			String wd = getWorkingDirectoryLocation(config);
 			if (wd == null) {
-				wd = new File(System.getProperty("user.home", ".")); //$NON-NLS-1$ //$NON-NLS-2$
+				wd = System.getProperty("user.home", "."); //$NON-NLS-1$ //$NON-NLS-2$
 			}
 			String arguments[] = getProgramArgumentsArray(config);
 			ArrayList command = new ArrayList(1 + arguments.length);
-			command.add(exePath.toOSString());
+			command.add(exePath);
 			command.addAll(Arrays.asList(arguments));
 			String[] commandArray = (String[])command.toArray(new String[command.size()]);
 			boolean usePty = config.getAttribute(ICDTLaunchConfigurationConstants.ATTR_USE_TERMINAL, ICDTLaunchConfigurationConstants.USE_TERMINAL_DEFAULT);
 			monitor.worked(2);
-			Process process = exec(commandArray, getEnvironment(config), wd, usePty);
-			monitor.worked(6);
-			DebugPlugin.newProcess(launch, process, renderProcessLabel(commandArray[0]));
+			// default working dir is the project if this config has a project
+			ICProject cp = CDebugUtils.getCProject(config);
+			if (cp != null) {
+				IProject p = cp.getProject();
+				IRemoteCommandLauncher proxy = RemoteProxyManager.getInstance().getLauncher(p);
+				Process process = proxy.execute(exePath, arguments, getEnvironment(config), wd, usePty, monitor);
+				monitor.worked(6);
+				DebugPlugin.newProcess(launch, process, renderProcessLabel(commandArray[0]));
+		} else {
+				Path wdPath = new Path(wd);
+				File f = wdPath.toFile();
+				Process process = exec(commandArray, getEnvironment(config), f, usePty);
+				monitor.worked(6);
+				DebugPlugin.newProcess(launch, process, renderProcessLabel(commandArray[0]));
+			}
 		} finally {
 			monitor.done();
 		}		

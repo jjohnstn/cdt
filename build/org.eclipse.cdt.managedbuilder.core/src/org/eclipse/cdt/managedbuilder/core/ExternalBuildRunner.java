@@ -34,6 +34,8 @@ import org.eclipse.cdt.core.resources.IConsole;
 import org.eclipse.cdt.core.resources.RefreshScopeManager;
 import org.eclipse.cdt.core.settings.model.ICConfigurationDescription;
 import org.eclipse.cdt.internal.core.ConsoleOutputSniffer;
+import org.eclipse.cdt.internal.core.remoteproxy.IRemoteCommandLauncher;
+import org.eclipse.cdt.internal.core.remoteproxy.RemoteProxyManager;
 import org.eclipse.cdt.make.core.scannerconfig.IScannerConfigBuilderInfo2;
 import org.eclipse.cdt.make.core.scannerconfig.IScannerInfoCollector;
 import org.eclipse.cdt.make.core.scannerconfig.IScannerInfoConsoleParser;
@@ -148,10 +150,7 @@ public class ExternalBuildRunner extends AbstractBuildRunner {
 					isClean = true;
 
 				String errMsg = null;
-				ICommandLauncher launcher = builder.getCommandLauncher();
-				launcher.setProject(project);
-				// Print the command for visual interaction.
-				launcher.showCommand(true);
+				IRemoteCommandLauncher launcher = RemoteProxyManager.getInstance().getLauncher(project);
 
 				// Set the environment
 				Map<String, String> envMap = getEnvironment(builder);
@@ -178,7 +177,7 @@ public class ExternalBuildRunner extends AbstractBuildRunner {
 				ConsoleOutputSniffer sniffer = createBuildOutputSniffer(stdout, stderr, project, configuration, workingDirectory, markerGenerator, null);
 				OutputStream consoleOut = (sniffer == null ? stdout : sniffer.getOutputStream());
 				OutputStream consoleErr = (sniffer == null ? stderr : sniffer.getErrorStream());
-				Process p = launcher.execute(buildCommand, buildArguments, env, workingDirectory, monitor);
+				Process p = launcher.execute(buildCommand.toString(), buildArguments, env, workingDirectory.toString(), monitor);
 				if (p != null) {
 					try {
 						// Close the input of the Process explicitly.

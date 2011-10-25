@@ -17,6 +17,7 @@ package org.eclipse.cdt.launch;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
@@ -39,9 +40,12 @@ import org.eclipse.cdt.debug.core.CDebugUtils;
 import org.eclipse.cdt.debug.core.ICDTLaunchConfigurationConstants;
 import org.eclipse.cdt.debug.core.ICDebugConfiguration;
 import org.eclipse.cdt.debug.ui.CDebugUIPlugin;
+import org.eclipse.cdt.internal.core.remoteproxy.IRemoteFileProxy;
+import org.eclipse.cdt.internal.core.remoteproxy.RemoteProxyManager;
 import org.eclipse.cdt.launch.internal.ui.LaunchMessages;
 import org.eclipse.cdt.launch.internal.ui.LaunchUIPlugin;
 import org.eclipse.cdt.ui.newui.CDTPropertyManager;
+import org.eclipse.core.filesystem.IFileStore;
 import org.eclipse.core.resources.IContainer;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IMarker;
@@ -195,6 +199,21 @@ abstract public class AbstractCLaunchDelegate extends LaunchConfigurationDelegat
 	}
 
 	/**
+	 * Returns the working directory specified by the given launch
+	 * configuration, or <code>null</code> if none.
+	 * 
+	 * @param configuration
+	 *            launch configuration
+	 * @return the working directory specified by the given launch
+	 *         configuration, or <code>null</code> if none
+	 * @exception CoreException
+	 *                if unable to retrieve the attribute
+	 */
+	public String getWorkingDirectoryLocation(ILaunchConfiguration configuration) throws CoreException {
+		return verifyWorkingDirectoryLocation(configuration);
+	}
+
+	/**
 	 * Expands and returns the working directory attribute of the given launch
 	 * configuration. Returns <code>null</code> if a working directory is not
 	 * specified. If specified, the working is verified to point to an existing
@@ -214,6 +233,31 @@ abstract public class AbstractCLaunchDelegate extends LaunchConfigurationDelegat
 			String expandedLocation = LaunchUtils.getStringVariableManager().performStringSubstitution(location);
 			if (expandedLocation.length() > 0) {
 				return new Path(expandedLocation);
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Expands and returns the working directory attribute of the given launch
+	 * configuration. Returns <code>null</code> if a working directory is not
+	 * specified. If specified, the working is verified to point to an existing
+	 * directory in the local file system.
+	 * 
+	 * @param configuration launch configuration
+	 * @return an absolute path to a directory in the local file system, or
+	 * <code>null</code> if unspecified
+	 * @throws CoreException if unable to retrieve the associated launch
+	 * configuration attribute, if unable to resolve any variables, or if the
+	 * resolved location does not point to an existing directory in the local
+	 * file system
+	 */
+	protected String getWorkingDirectoryPathLocation(ILaunchConfiguration config) throws CoreException {
+		String location = config.getAttribute(ICDTLaunchConfigurationConstants.ATTR_WORKING_DIRECTORY, (String)null);
+		if (location != null) {
+			String expandedLocation = LaunchUtils.getStringVariableManager().performStringSubstitution(location);
+			if (expandedLocation.length() > 0) {
+				return expandedLocation;
 			}
 		}
 		return null;
@@ -463,7 +507,10 @@ abstract public class AbstractCLaunchDelegate extends LaunchConfigurationDelegat
 			ICProject cp = CDebugUtils.getCProject(configuration);
 			if (cp != null) {
 				IProject p = cp.getProject();
-				return p.getLocation().toFile();
+				IRemoteFileProxy proxy = RemoteProxyManager.getInstance().getFileProxy(p);
+				String projPath = proxy.toPath(p.getLocationURI());
+				path = new Path(projPath);
+				return path.toFile();
 			}
 		} else {
 			if (path.isAbsolute()) {
@@ -479,13 +526,83 @@ abstract public class AbstractCLaunchDelegate extends LaunchConfigurationDelegat
 			} else {
 				IResource res = ResourcesPlugin.getWorkspace().getRoot().findMember(path);
 				if (res instanceof IContainer && res.exists()) {
-					return res.getLocation().toFile();
+					URI uri = res.getLocationURI();
+					IRemoteFileProxy proxy = RemoteProxyManager.getInstance().getFileProxy(res.getProject());
+					path = new Path(proxy.toPath(uri));
+					return path.toFile();
 				}
 				abort(LaunchMessages.AbstractCLaunchDelegate_Working_directory_does_not_exist,
 						new FileNotFoundException(
 								NLS.bind(
 										LaunchMessages.AbstractCLaunchDelegate_WORKINGDIRECTORY_PATH_not_found,
 										path.toOSString())),
+						ICDTLaunchConfigurationConstants.ERR_WORKING_DIRECTORY_DOES_NOT_EXIST);
+			}
+		}
+		return null;
+	}
+	
+	/**
+	 * Verifies the working directory specified by the given launch
+	 * configuration exists, and returns the working directory, or
+	 * <code>null</code> if none is specified.
+	 * 
+	 * @param configuration
+	 *            launch configuration
+	 * @return the working directory specified by the given launch
+	 *         configuration, or <code>null</code> if none
+	 * @exception CoreException
+	 *                if unable to retrieve the attribute
+	 */
+	public String verifyWorkingDirectoryLocation(ILaunchConfiguration configuration) throws CoreException {
+		String path = getWorkingDirectoryPathLocation(configuration);
+		if (path == null) {
+			// default working dir is the project if this config has a project
+			ICProject cp = CDebugUtils.getCProject(configuration);
+			if (cp != null) {
+				IProject p = cp.getProject();
+				IRemoteFileProxy proxy = RemoteProxyManager.getInstance().getFileProxy(p);
+				String projPath = proxy.toPath(p.getLocationURI());
+				return projPath;
+			}
+		} else {
+			// default working dir is the project if this config has a project
+			ICProject cp = CDebugUtils.getCProject(configuration);
+			if (cp != null) {
+				IProject p = cp.getProject();
+				IRemoteFileProxy proxy = RemoteProxyManager.getInstance().getFileProxy(p);
+				IFileStore f = proxy.getResource(path);
+				if (f.fetchInfo().isDirectory())
+					return path;
+				abort(LaunchMessages.AbstractCLaunchDelegate_Working_directory_does_not_exist,
+						new FileNotFoundException(
+								NLS.bind(LaunchMessages.AbstractCLaunchDelegate_WORKINGDIRECTORY_PATH_not_found,
+										path)),
+						ICDTLaunchConfigurationConstants.ERR_WORKING_DIRECTORY_DOES_NOT_EXIST);
+			}
+			Path p = new Path(path);
+			if (p.isAbsolute()) {
+				File dir = new File(p.toOSString());
+				if (dir.isDirectory()) {
+					return p.toOSString();
+				}
+				abort(LaunchMessages.AbstractCLaunchDelegate_Working_directory_does_not_exist,
+						new FileNotFoundException(
+								NLS.bind(LaunchMessages.AbstractCLaunchDelegate_WORKINGDIRECTORY_PATH_not_found,
+										path)),
+						ICDTLaunchConfigurationConstants.ERR_WORKING_DIRECTORY_DOES_NOT_EXIST);
+			} else {
+				IResource res = ResourcesPlugin.getWorkspace().getRoot().findMember(path);
+				if (res instanceof IContainer && res.exists()) {
+					URI uri = res.getLocationURI();
+					IRemoteFileProxy proxy = RemoteProxyManager.getInstance().getFileProxy(res.getProject());
+					return proxy.toPath(uri);
+				}
+				abort(LaunchMessages.AbstractCLaunchDelegate_Working_directory_does_not_exist,
+						new FileNotFoundException(
+								NLS.bind(
+										LaunchMessages.AbstractCLaunchDelegate_WORKINGDIRECTORY_PATH_not_found,
+										path)),
 						ICDTLaunchConfigurationConstants.ERR_WORKING_DIRECTORY_DOES_NOT_EXIST);
 			}
 		}

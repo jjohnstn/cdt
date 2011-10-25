@@ -15,6 +15,8 @@ package org.eclipse.cdt.debug.core;
 import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.util.ArrayList;
@@ -41,6 +43,10 @@ import org.eclipse.cdt.debug.core.model.ICValue;
 import org.eclipse.cdt.debug.core.model.ICWatchpoint;
 import org.eclipse.cdt.debug.core.model.ICWatchpoint2;
 import org.eclipse.cdt.debug.internal.core.model.CFloatingPointValue;
+import org.eclipse.cdt.internal.core.remoteproxy.IRemoteFileProxy;
+import org.eclipse.cdt.internal.core.remoteproxy.RemoteProxyManager;
+import org.eclipse.core.filesystem.EFS;
+import org.eclipse.core.filesystem.IFileStore;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IMarker;
 import org.eclipse.core.resources.IProject;
@@ -657,6 +663,97 @@ public class CDebugUtils {
 		}
 		return programPath;
 	}
+	/**
+	 * Returns a String path for the file referenced in the <i>C/C++ Application</i>
+	 * setting of a CDT launch configuration. Typically, the file is obtained by
+	 * combining the <i>C/C++ Application</i> setting with the <i>Project</i>
+	 * setting. If unable to combine and resolve these settings to a valid file,
+	 * a CoreException is thrown that provides the reason why. There are many
+	 * such possible reasons (a problem with the <i>Project</i> setting, an
+	 * empty <i>C/C++ Application</i> setting, the combined settings doesn't
+	 * resolve to an existing file, etc).
+	 * 
+	 * @param config
+	 *            the launch configuration
+	 * @param ignoreProjectSetting
+	 *            if true, resolve the file using only the <i>C/C++
+	 *            Application</i> setting. Do not take the <i>Project</i>
+	 *            setting into account.
+	 * @return the path as String
+	 * @throws CoreException
+	 * @since 8.0.1
+	 */
+	public static String verifyProgramURI(ILaunchConfiguration config, boolean ignoreProjectSetting) throws CoreException {
+		ICProject cproject = null;
+		if (!ignoreProjectSetting) {
+			cproject = verifyCProject(config);	// will throw exception if project setting not valid
+		}
+		IPath programPath = CDebugUtils.getProgramPath(config);
+		if (programPath == null || programPath.isEmpty()) {
+			throwCoreException(DebugCoreMessages.getString("CDebugUtils.Program_file_not_specified"), //$NON-NLS-1$
+					ICDTLaunchConfigurationConstants.ERR_UNSPECIFIED_PROGRAM);
+		}
+		
+		String progPath = null;
+		if (programPath != null) {	// this check is here only to avoid warning; compiler can't tell we'll throw an exception above
+			progPath = programPath.toString();
+			IFileStore progFile = null;
+			if (!programPath.isAbsolute() && (cproject != null)) {
+				// See if we can brute-force append the program path to the
+				// project location. This allows us to support the program file
+				// being outside the project, even outside the workspace, without
+				// requiring a linked resource (e.g., the setting could be 
+				// "..\..\some\dir\myprogram.exe")
+				URI projectURI = cproject.getProject().getLocationURI();
+				String location = projectURI.toString();
+				try {
+					//FIXME: should we use proxy getDirectorySeparator()?
+					URI programURI = new URI(location + "/" + programPath); //$NON-NLS-1$
+					IRemoteFileProxy proxy = RemoteProxyManager.getInstance().getFileProxy(cproject.getProject());
+					progPath = proxy.toPath(programURI);
+					progFile = proxy.getResource(progPath);
+					if (!progFile.fetchInfo().exists()) {
+						// Try looking in the project for the file. This
+						// supports linked resources.
+						IFile projFile = null;
+						try {
+							projFile = cproject.getProject().getFile(CDebugUtils.getProgramPath(config));
+						} catch (IllegalArgumentException exc) {
+							// thrown if relative path that resolves to a root file (e.g., "..\somefile")							
+						}	
+						if (projFile != null && projFile.exists()) {
+							URI projFileURI = projFile.getLocationURI();
+							progPath = proxy.toPath(projFileURI);
+						}
+					}
+				} catch (URISyntaxException e) {
+					progPath = null;
+				}
+			}
+			
+			if (progPath != null) {
+				if (cproject != null) {
+					IRemoteFileProxy proxy = RemoteProxyManager.getInstance().getFileProxy(cproject.getProject());
+					progFile = proxy.getResource(progPath);
+				} else {
+					try {
+						progFile = EFS.getStore(new URI(progPath));
+					} catch (URISyntaxException e) {
+						progPath = null;
+					}
+				}
+			}
+			
+			if (progPath == null || !progFile.fetchInfo().exists()) {
+				throwCoreException(
+						DebugCoreMessages.getString("CDebugUtils.Program_file_does_not_exist"), //$NON-NLS-1$
+						new FileNotFoundException(
+								DebugCoreMessages.getFormattedString("CDebugUtils.PROGRAM_PATH_not_found", programPath.toOSString())), //$NON-NLS-1$
+						ICDTLaunchConfigurationConstants.ERR_PROGRAM_NOT_EXIST);
+			}
+		}
+		return progPath;
+	}
 
 	/**
 	 * Variant that expects (requires) the launch configuration to have a valid
@@ -667,6 +764,17 @@ public class CDebugUtils {
 	 */
 	public static IPath verifyProgramPath(ILaunchConfiguration config) throws CoreException {
 		return verifyProgramPath(config, false); 
+	}
+
+	/**
+	 * Variant that expects (requires) the launch configuration to have a valid
+	 * <i>Project</i> setting. See
+	 * {@link #verifyProgramURI(ILaunchConfiguration, boolean)}
+	 * 
+	 * @since 8.0.1
+	 * 	 */
+	public static String verifyProgramURI(ILaunchConfiguration config) throws CoreException {
+		return verifyProgramURI(config, false); 
 	}
 	
 	/** Throws a CoreException. Clutter-reducing utility method. */

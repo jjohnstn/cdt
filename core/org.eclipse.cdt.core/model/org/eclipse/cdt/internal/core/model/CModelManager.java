@@ -59,6 +59,8 @@ import org.eclipse.cdt.core.settings.model.ICProjectDescriptionListener;
 import org.eclipse.cdt.core.settings.model.ICSettingObject;
 import org.eclipse.cdt.internal.core.CCoreInternals;
 import org.eclipse.cdt.internal.core.LocalProjectScope;
+import org.eclipse.cdt.internal.core.remoteproxy.IRemoteFileProxy;
+import org.eclipse.cdt.internal.core.remoteproxy.RemoteProxyManager;
 import org.eclipse.cdt.internal.core.resources.ResourceLookup;
 import org.eclipse.cdt.internal.core.settings.model.CProjectDescription;
 import org.eclipse.cdt.internal.core.settings.model.CProjectDescriptionManager;
@@ -723,8 +725,16 @@ public class CModelManager implements IResourceChangeListener, IContentTypeChang
 			}
 		}
 
-		IPath location = file.getLocation();
-
+//		IPath location = file.getLocation();
+		IRemoteFileProxy proxy;
+		try {
+			proxy = RemoteProxyManager.getInstance().getFileProxy(file.getProject());
+		} catch (CoreException e1) {
+			return null;
+		}
+		URI fileLocationURI = file.getLocationURI();
+		IPath location = new Path(proxy.toPath(fileLocationURI));
+		
 		for (BinaryParserConfig parser2 : parsers) {
 			try {
 				IBinaryParser parser = parser2.getBinaryParser();

@@ -641,6 +641,7 @@
    <extension-point id="EFSExtensionProvider" name="%efsExtensionProvider.name" schema="schema/EFSExtensionProvider.exsd"/>
    <extension-point id="RefreshExclusionFactory" name="%refreshExclusionFactory.name" schema="schema/RefreshExclusionFactory.exsd"/>
    <extension-point id="UNCPathConverter" name="%uncPathConverter.name" schema="schema/UNCPathConverter.exsd"/>
+   <extension-point id="RemoteProxyManager" name="RemoteProxyManager" schema="schema/RemoteProxyManager.exsd"/>
 
    <extension
          point="org.eclipse.cdt.core.templateProcessTypes">
