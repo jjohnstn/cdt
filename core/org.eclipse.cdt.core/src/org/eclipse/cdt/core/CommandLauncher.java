@@ -169,6 +169,33 @@ public class CommandLauncher implements ICommandLauncher {
 	}
 	
 	/**
+	 * @since 8.0.1
+	 * @see org.eclipse.cdt.core.ICommandLauncher#execute(IPath, String[], String[], IPath, IProgressMonitor)
+	 */
+	public Process execute(IPath commandPath, String[] args, String[] env, IPath changeToDirectory, 
+			boolean usePTY, IProgressMonitor monitor) throws CoreException {
+		try {
+			// add platform specific arguments (shell invocation)
+			fCommandArgs = constructCommandArray(commandPath.toOSString(), args);
+			
+			File file = null;
+			
+			if(changeToDirectory != null)
+				file = changeToDirectory.toFile();
+			
+			if (usePTY && PTY.isSupported())
+				fProcess = ProcessFactory.getFactory().exec(fCommandArgs, env, file, new PTY());
+			else
+				fProcess = ProcessFactory.getFactory().exec(fCommandArgs, env, file);
+			fErrorMessage = ""; //$NON-NLS-1$
+		} catch (IOException e) {
+			setErrorMessage(e.getMessage());
+			fProcess = null;
+		}
+		return fProcess;
+	}
+	
+	/**
 	 * @since 5.1
 	 * @see org.eclipse.cdt.core.ICommandLauncher#execute(IPath, String[], String[], IPath, IProgressMonitor)
 	 */
