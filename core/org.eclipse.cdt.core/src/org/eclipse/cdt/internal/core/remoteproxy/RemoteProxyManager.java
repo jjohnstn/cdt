@@ -72,24 +72,28 @@ public class RemoteProxyManager implements IRemoteProxyManager {
 	public IRemoteFileProxy getFileProxy(IProject project) throws CoreException {
 		URI projectURI = project.getLocationURI();
 		String scheme = projectURI.getScheme();
-		if (scheme != null && !LocalHost.equals(projectURI.getHost())) {
+		if (scheme != null) {
 		   IRemoteProxyManager manager = getRemoteManager(scheme);
 		   if (manager != null)
 		      return manager.getFileProxy(project);
 		}
-		return getLocalFileProxy();
+		if (LocalHost.equals(projectURI.getHost()))
+			return getLocalFileProxy();
+		return null;
 	}
 	
 	@Override
 	public IRemoteCommandLauncher getLauncher(IProject project) throws CoreException {
 		URI projectURI = project.getLocationURI();
 		String scheme = projectURI.getScheme();
-		if (scheme != null && !LocalHost.equals(projectURI.getHost())) {
+		if (scheme != null) {
 			IRemoteProxyManager manager = getRemoteManager(scheme);
 			if (manager != null)
 		       return manager.getLauncher(project);
 		}
-		return new LocalLauncher();
+		if (LocalHost.equals(projectURI.getHost()))
+			return new LocalLauncher();
+		return null;
 	}
 
 	@Override
@@ -100,7 +104,9 @@ public class RemoteProxyManager implements IRemoteProxyManager {
 			IRemoteProxyManager manager = getRemoteManager(scheme);
 			if (manager != null)
 			  return manager.getOS(project);
-		}
-		return Platform.getOS();
+		}		
+		if (LocalHost.equals(projectURI.getHost()))
+			return Platform.getOS();
+		return null;
 	}
 }
