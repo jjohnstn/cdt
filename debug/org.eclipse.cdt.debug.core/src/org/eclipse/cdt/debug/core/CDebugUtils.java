@@ -706,28 +706,29 @@ public class CDebugUtils {
 				// "..\..\some\dir\myprogram.exe")
 				URI projectURI = cproject.getProject().getLocationURI();
 				String location = projectURI.toString();
-				try {
-					//FIXME: should we use proxy getDirectorySeparator()?
-					URI programURI = new URI(location + "/" + programPath); //$NON-NLS-1$
-					IRemoteFileProxy proxy = RemoteProxyManager.getInstance().getFileProxy(cproject.getProject());
-					progPath = proxy.toPath(programURI);
-					progFile = proxy.getResource(progPath);
-					if (!progFile.fetchInfo().exists()) {
-						// Try looking in the project for the file. This
-						// supports linked resources.
-						IFile projFile = null;
-						try {
-							projFile = cproject.getProject().getFile(CDebugUtils.getProgramPath(config));
-						} catch (IllegalArgumentException exc) {
-							// thrown if relative path that resolves to a root file (e.g., "..\somefile")							
-						}	
-						if (projFile != null && projFile.exists()) {
-							URI projFileURI = projFile.getLocationURI();
-							progPath = proxy.toPath(projFileURI);
-						}
+				//FIXME: should we use proxy getDirectorySeparator()?
+				String projectPath = projectURI.getPath();
+				URI programURI = null;
+				if (projectPath.endsWith("/")) //$NON-NLS-1$
+				    programURI = projectURI.resolve("./" + programPath); //$NON-NLS-1$
+				else
+				    programURI = projectURI.resolve("./" + cproject.getProject().getName() + "/" + programPath); //$NON-NLS-1$ //$NON-NLS-2$
+				IRemoteFileProxy proxy = RemoteProxyManager.getInstance().getFileProxy(cproject.getProject());
+				progPath = proxy.toPath(programURI);
+				progFile = proxy.getResource(progPath);
+				if (!progFile.fetchInfo().exists()) {
+					// Try looking in the project for the file. This
+					// supports linked resources.
+					IFile projFile = null;
+					try {
+						projFile = cproject.getProject().getFile(CDebugUtils.getProgramPath(config));
+					} catch (IllegalArgumentException exc) {
+						// thrown if relative path that resolves to a root file (e.g., "..\somefile")							
+					}	
+					if (projFile != null && projFile.exists()) {
+						URI projFileURI = projFile.getLocationURI();
+						progPath = proxy.toPath(projFileURI);
 					}
-				} catch (URISyntaxException e) {
-					progPath = null;
 				}
 			}
 			
