@@ -518,7 +518,7 @@ public class ContainerTab extends AbstractLaunchConfigurationTab implements
 	}
 
 	@Override
-	public void changeEvent(int type) {
+	public void changeEvent(IDockerConnection changedConnection, int type) {
 		String currUri = null;
 		int currIndex = 0;
 		connections = DockerConnectionManager.getInstance().getConnections();

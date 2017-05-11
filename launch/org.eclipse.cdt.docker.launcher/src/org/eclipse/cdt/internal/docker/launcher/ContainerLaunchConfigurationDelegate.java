@@ -244,7 +244,7 @@ public class ContainerLaunchConfigurationDelegate extends GdbLaunchDelegate
 						image, command,
 						commandDir, workingDir, additionalDirs, origEnv,
 						envMap, ports, keepContainer, supportStdin,
-						privilegedMode, labels);
+						privilegedMode, labels, "seccomp:unconfined"); //$NON-NLS-1$
 
 				// wait until gdbserver is started successfully and we have its
 				// ip address or
